@@ -4,12 +4,13 @@ const User = require("../model/user.model");
 
 const auth = async (req, res, next) => {
   try {
-    const { token } = req.headers;
+    const token = req?.headers?.authorization;
+
     if (!token) {
       throw new ApiError(404, "Token not found");
     }
 
-    const { id } = await jwt.verify(token, process.env.SECRET);
+    const { id } = await jwt.verify(token.split(" ")[1], process.env.SECRET);
 
     if (!id) throw new ApiError(403, "Invalid token");
 
@@ -21,7 +22,11 @@ const auth = async (req, res, next) => {
     req.user = data;
     next();
   } catch (error) {
-    throw new ApiError(500);
+    console.log(error);
+
+    return res
+      .status(500)
+      .json({ status: 500, message: "Something went wrong", error });
   }
 };
 

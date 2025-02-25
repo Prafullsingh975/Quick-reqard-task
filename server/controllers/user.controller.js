@@ -9,6 +9,8 @@ const ApiResponse = require("../utils/ApiResponse");
 const signUpUser = asyncHandler(async (req, res) => {
   const session = await startSession();
   try {
+    session.startTransaction();
+
     const {
       firstName,
       lastName,
@@ -27,22 +29,23 @@ const signUpUser = asyncHandler(async (req, res) => {
       !mobile ||
       !dob ||
       !pinCode ||
-      password
+      !password
     )
       throw new ApiError(400, "Fill all the required field");
-    session.startTransaction();
+
     const salt = await bcrypt.genSalt(10);
     const hash = await bcrypt.hash(password, salt);
-    let rewardPoint = 200;
+
+    let rewardPoints = 200;
     if (referralCode) {
       const referral = await User.findOneAndUpdate(
-        { mobile: referralCode },
+        { mobile: referralCode.trim() },
         { $inc: { rewardPoints: 100 } },
         { new: true, session }
       );
 
-      if (referral) throw new ApiError(400, "Invalid Referral Code");
-      rewardPoint += 100;
+      if (!referral) throw new ApiError(400, "Invalid Referral Code");
+      rewardPoints += 100;
     }
 
     const user = await User.create(
@@ -55,31 +58,34 @@ const signUpUser = asyncHandler(async (req, res) => {
           dob,
           pinCode,
           password: hash,
-          rewardPoint,
+          rewardPoints,
         },
       ],
       { session }
     );
 
     const token = await jwt.sign(
-      { id: user._id, mobile, email },
+      { id: user[0]._id, mobile, email },
       process.env.SECRET
     );
 
     // Commit the transaction
     await session.commitTransaction();
     session.endSession();
+
     return res
       .status(201)
       .json(
         new ApiResponse(
           201,
           { token },
-          `You receive welcome bonos of ${rewardPoint}`
+          `You receive welcome bonos of ${rewardPoints}`
         )
       );
   } catch (error) {
-    await session.abortTransaction();
+    if (session.inTransaction()) {
+      await session.abortTransaction();
+    }
     session.endSession();
     throw new ApiError(500, "Error in user registration", error);
   }
